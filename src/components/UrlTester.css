@@ -1,11 +1,13 @@
+/* SNMAT-aligned tokens (www.snmat.org.uk — navy, gold, accessible blue) */
 .url-tester {
-	--tf-bg: #0f172a;
-	--tf-surface: #1e293b;
-	--tf-border: #334155;
-	--tf-text: #f1f5f9;
+	--tf-bg: #0a1524;
+	--tf-surface: #132a45;
+	--tf-border: #2d4a6f;
+	--tf-text: #f8fafc;
 	--tf-muted: #94a3b8;
-	--tf-accent: #38bdf8;
-	--tf-accent-dim: #0ea5e9;
+	--tf-accent: #c9a227;
+	--tf-accent-dim: #a67c00;
+	--tf-link: #007cba;
 	--tf-green: #22c55e;
 	--tf-red: #ef4444;
 	--tf-radius: 10px;
@@ -14,6 +16,15 @@
 	padding: 1.5rem 1.25rem 3rem;
 	color: var(--tf-text);
 	font-family: 'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+}
+
+.url-tester .snmat-kicker {
+	font-size: 0.8rem;
+	font-weight: 600;
+	text-transform: none;
+	letter-spacing: 0.04em;
+	color: var(--tf-accent);
+	margin: 0 0 0.5rem;
 }
 
 .url-tester h1 {
@@ -117,7 +128,7 @@
 
 .url-tester .btn-primary {
 	background: linear-gradient(135deg, var(--tf-accent), var(--tf-accent-dim));
-	color: #0f172a;
+	color: #0a1524;
 }
 
 .url-tester .btn-primary:hover:not(:disabled) {
@@ -211,7 +222,7 @@
 }
 
 .url-tester .link-cell a {
-	color: var(--tf-accent);
+	color: var(--tf-link);
 	word-break: break-all;
 }
 

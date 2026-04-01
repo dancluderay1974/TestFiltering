@@ -445,6 +445,7 @@ export default function UrlTester() {
 
 	return (
 		<div className="url-tester">
+			<p className="snmat-kicker">Diocese of Southwell &amp; Nottingham MAT · filter testing</p>
 			<h1>Test your URL list</h1>
 			<p className="lede">
 				Each URL is tested with <strong>several browser-side methods</strong> in parallel: <code>fetch</code> (no-cors), a{' '}
@@ -650,7 +651,7 @@ export default function UrlTester() {
 											borderRadius: 8,
 										}}
 									/>
-									<Bar dataKey="count" fill="#38bdf8" radius={[6, 6, 0, 0]} />
+									<Bar dataKey="count" fill="#007cba" radius={[6, 6, 0, 0]} />
 								</BarChart>
 							</ResponsiveContainer>
 						) : (
