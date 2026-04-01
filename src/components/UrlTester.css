@@ -1,0 +1,249 @@
+.url-tester {
+	--tf-bg: #0f172a;
+	--tf-surface: #1e293b;
+	--tf-border: #334155;
+	--tf-text: #f1f5f9;
+	--tf-muted: #94a3b8;
+	--tf-accent: #38bdf8;
+	--tf-accent-dim: #0ea5e9;
+	--tf-green: #22c55e;
+	--tf-red: #ef4444;
+	--tf-radius: 10px;
+	max-width: 1100px;
+	margin: 0 auto;
+	padding: 1.5rem 1.25rem 3rem;
+	color: var(--tf-text);
+	font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Ubuntu, sans-serif;
+}
+
+.url-tester h1 {
+	font-size: 1.75rem;
+	font-weight: 700;
+	margin: 0 0 0.35rem;
+	letter-spacing: -0.02em;
+}
+
+.url-tester .lede {
+	color: var(--tf-muted);
+	margin: 0 0 1.5rem;
+	line-height: 1.55;
+	font-size: 0.95rem;
+}
+
+.url-tester .panel {
+	background: var(--tf-surface);
+	border: 1px solid var(--tf-border);
+	border-radius: var(--tf-radius);
+	padding: 1.25rem;
+	margin-bottom: 1.25rem;
+}
+
+.url-tester label {
+	display: block;
+	font-size: 0.8rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	color: var(--tf-muted);
+	margin-bottom: 0.5rem;
+}
+
+.url-tester textarea {
+	width: 100%;
+	min-height: 140px;
+	box-sizing: border-box;
+	background: var(--tf-bg);
+	border: 1px solid var(--tf-border);
+	border-radius: 8px;
+	color: var(--tf-text);
+	padding: 0.75rem 0.85rem;
+	font-family: ui-monospace, monospace;
+	font-size: 0.85rem;
+	resize: vertical;
+}
+
+.url-tester textarea:focus {
+	outline: 2px solid var(--tf-accent);
+	outline-offset: 2px;
+}
+
+.url-tester .row-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	align-items: center;
+	margin-top: 1rem;
+}
+
+.url-tester input[type='file'] {
+	font-size: 0.85rem;
+	color: var(--tf-muted);
+}
+
+.url-tester button {
+	cursor: pointer;
+	border: none;
+	border-radius: 8px;
+	font-weight: 600;
+	font-size: 0.9rem;
+	padding: 0.65rem 1.15rem;
+	transition: background 0.15s, transform 0.1s;
+}
+
+.url-tester button:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+.url-tester .btn-primary {
+	background: linear-gradient(135deg, var(--tf-accent), var(--tf-accent-dim));
+	color: #0f172a;
+}
+
+.url-tester .btn-primary:hover:not(:disabled) {
+	filter: brightness(1.05);
+}
+
+.url-tester .btn-secondary {
+	background: var(--tf-bg);
+	color: var(--tf-text);
+	border: 1px solid var(--tf-border);
+}
+
+.url-tester .btn-secondary:hover:not(:disabled) {
+	border-color: var(--tf-muted);
+}
+
+.url-tester .progress {
+	margin-top: 0.75rem;
+	font-size: 0.85rem;
+	color: var(--tf-muted);
+}
+
+.url-tester .table-wrap {
+	overflow-x: auto;
+	border-radius: var(--tf-radius);
+	border: 1px solid var(--tf-border);
+}
+
+.url-tester table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.875rem;
+}
+
+.url-tester th,
+.url-tester td {
+	text-align: left;
+	padding: 0.65rem 0.85rem;
+	border-bottom: 1px solid var(--tf-border);
+	vertical-align: top;
+}
+
+.url-tester th {
+	background: var(--tf-bg);
+	color: var(--tf-muted);
+	font-weight: 600;
+	font-size: 0.72rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.url-tester tr:last-child td {
+	border-bottom: none;
+}
+
+.url-tester .badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-weight: 700;
+	font-size: 0.75rem;
+	padding: 0.2rem 0.55rem;
+	border-radius: 999px;
+	white-space: nowrap;
+}
+
+.url-tester .badge.ok {
+	background: rgba(34, 197, 94, 0.2);
+	color: var(--tf-green);
+}
+
+.url-tester .badge.bad {
+	background: rgba(239, 68, 68, 0.2);
+	color: var(--tf-red);
+}
+
+.url-tester .badge.pending {
+	background: rgba(148, 163, 184, 0.2);
+	color: var(--tf-muted);
+}
+
+.url-tester .link-cell a {
+	color: var(--tf-accent);
+	word-break: break-all;
+}
+
+.url-tester .link-cell a:hover {
+	text-decoration: underline;
+}
+
+.url-tester .methods {
+	font-size: 0.78rem;
+	color: var(--tf-muted);
+	font-family: ui-monospace, monospace;
+	line-height: 1.45;
+}
+
+.url-tester .summary-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 1.25rem;
+	margin-top: 1rem;
+}
+
+.url-tester .chart-box {
+	background: var(--tf-bg);
+	border: 1px solid var(--tf-border);
+	border-radius: var(--tf-radius);
+	padding: 1rem;
+	min-height: 260px;
+}
+
+.url-tester .chart-box h3 {
+	margin: 0 0 0.75rem;
+	font-size: 0.95rem;
+	font-weight: 600;
+}
+
+.url-tester .stat-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+	gap: 0.75rem;
+	margin-bottom: 1rem;
+}
+
+.url-tester .stat-card {
+	background: var(--tf-bg);
+	border: 1px solid var(--tf-border);
+	border-radius: 8px;
+	padding: 0.85rem 1rem;
+}
+
+.url-tester .stat-card .num {
+	font-size: 1.5rem;
+	font-weight: 800;
+}
+
+.url-tester .stat-card .lbl {
+	font-size: 0.75rem;
+	color: var(--tf-muted);
+	margin-top: 0.2rem;
+}
+
+.url-tester .note {
+	font-size: 0.8rem;
+	color: var(--tf-muted);
+	margin-top: 1rem;
+	line-height: 1.5;
+}

@@ -1,0 +1,11 @@
+---
+import Layout from '../layouts/Layout.astro';
+import UrlTester from '../components/UrlTester';
+---
+
+<Layout
+	title="Test your URL list | Reachability checker"
+	description="Paste or upload a CSV of URLs. Multi-method HTTP checks, summary charts, and CSV export."
+>
+	<UrlTester client:load />
+</Layout>

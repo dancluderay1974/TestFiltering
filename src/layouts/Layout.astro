@@ -1,0 +1,43 @@
+---
+interface Props {
+	title?: string;
+	description?: string;
+}
+
+const {
+	title = 'URL reachability checker',
+	description = 'Upload a CSV of URLs and run multi-method HTTP checks from the edge.',
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content={description} />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+	</head>
+	<body>
+		<slot />
+	</body>
+</html>
+
+<style is:global>
+	*,
+	*::before,
+	*::after {
+		box-sizing: border-box;
+	}
+	html {
+		background: #0f172a;
+		color: #f1f5f9;
+	}
+	body {
+		margin: 0;
+		min-height: 100vh;
+	}
+</style>
