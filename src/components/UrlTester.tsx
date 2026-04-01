@@ -12,6 +12,7 @@ import {
 	XAxis,
 	YAxis,
 } from 'recharts';
+import { probeFetchNoCors, probeIframeLoad, type BrowserProbeResult } from '../lib/browserProbes';
 import './UrlTester.css';
 
 type MethodProbe = {
@@ -29,13 +30,28 @@ type CheckPayload = {
 	methods: MethodProbe[];
 };
 
+export type FilterVerdict = 'allowed' | 'unverified' | 'blocked';
+
+export type MergedCheckResult = {
+	edge: CheckPayload;
+	verdict: FilterVerdict;
+	browserFetch: BrowserProbeResult;
+	browserIframe: BrowserProbeResult;
+};
+
 export type ResultRow = {
 	url: string;
 	loading: boolean;
 	error?: string;
-	result?: CheckPayload;
+	result?: MergedCheckResult;
 	checkedAt?: string;
 };
+
+function normalizeUrlInput(input: string): string {
+	let t = input.trim();
+	if (!/^https?:\/\//i.test(t)) t = `https://${t}`;
+	return t;
+}
 
 function parseCsvLine(line: string): string[] {
 	const out: string[] = [];
@@ -100,21 +116,48 @@ export function parseUrlsFromCsv(text: string): string[] {
 	return urls;
 }
 
-async function checkOne(url: string): Promise<CheckPayload> {
-	const res = await fetch('/api/check-url', {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ url }),
-	});
-	if (!res.ok) {
-		const j = await res.json().catch(() => ({}));
-		const msg =
-			j && typeof j === 'object' && 'error' in j && typeof (j as { error: string }).error === 'string'
-				? (j as { error: string }).error
-				: `HTTP ${res.status}`;
-		throw new Error(msg);
-	}
-	return (await res.json()) as CheckPayload;
+function computeVerdict(
+	clientOk: boolean,
+	edgeAllowed: boolean,
+): FilterVerdict {
+	if (clientOk) return 'allowed';
+	if (edgeAllowed) return 'unverified';
+	return 'blocked';
+}
+
+async function checkMerged(url: string): Promise<MergedCheckResult> {
+	const target = normalizeUrlInput(url);
+
+	const [edgeRes, browserFetch, browserIframe] = await Promise.all([
+		fetch('/api/check-url', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ url: target }),
+		}).then(async (res) => {
+			if (!res.ok) {
+				const j = await res.json().catch(() => ({}));
+				const msg =
+					j && typeof j === 'object' && 'error' in j && typeof (j as { error: string }).error === 'string'
+						? (j as { error: string }).error
+						: `HTTP ${res.status}`;
+				throw new Error(msg);
+			}
+			return (await res.json()) as CheckPayload;
+		}),
+		probeFetchNoCors(target),
+		probeIframeLoad(target),
+	]);
+
+	const clientOk = browserFetch.ok || browserIframe.ok;
+	const edgeAllowed = edgeRes.accessible;
+	const verdict = computeVerdict(clientOk, edgeAllowed);
+
+	return {
+		edge: edgeRes,
+		verdict,
+		browserFetch,
+		browserIframe,
+	};
 }
 
 async function mapPool<T, R>(
@@ -135,13 +178,19 @@ async function mapPool<T, R>(
 	return results;
 }
 
-function formatMethods(m: MethodProbe[]): string {
+function formatEdgeMethods(m: MethodProbe[]): string {
 	return m
 		.map(
 			(p) =>
 				`${p.method}: ${p.completed ? p.status || '—' : 'fail'}${p.error ? ` (${p.error.slice(0, 80)})` : ''} ${p.durationMs}ms`,
 		)
 		.join(' · ');
+}
+
+function formatProbeLine(label: string, p: BrowserProbeResult): string {
+	const status = p.ok ? 'ok' : 'fail';
+	const err = p.error ? ` (${p.error.slice(0, 60)})` : '';
+	return `${label}: ${status}${err} ${p.durationMs}ms`;
 }
 
 function statusBucket(status: number): string {
@@ -152,6 +201,10 @@ function statusBucket(status: number): string {
 	if (status >= 500) return '5xx';
 	return 'Other';
 }
+
+const PIE_ALLOWED = '#ef4444';
+const PIE_UNVERIFIED = '#f59e0b';
+const PIE_BLOCKED = '#22c55e';
 
 export default function UrlTester() {
 	const [rawInput, setRawInput] = useState('');
@@ -177,9 +230,8 @@ export default function UrlTester() {
 
 		let completed = 0;
 		await mapPool(urls, 4, async (url) => {
-			const idx = urls.indexOf(url);
 			try {
-				const result = await checkOne(url);
+				const result = await checkMerged(url);
 				const checkedAt = new Date().toISOString();
 				setRows((prev) => {
 					const next = [...prev];
@@ -216,26 +268,36 @@ export default function UrlTester() {
 
 	const summary = useMemo(() => {
 		const finished = rows.filter((r) => !r.loading);
-		const ok = finished.filter((r) => r.result?.accessible).length;
-		const bad = finished.length - ok;
 		const withErr = finished.filter((r) => r.error).length;
+		const allowed = finished.filter((r) => r.result?.verdict === 'allowed').length;
+		const unverified = finished.filter((r) => r.result?.verdict === 'unverified').length;
+		const blocked = finished.filter((r) => r.result?.verdict === 'blocked').length;
 
 		const bucketMap = new Map<string, number>();
 		for (const r of finished) {
-			const st = r.result?.status ?? 0;
+			if (!r.result?.edge) continue;
+			const st = r.result.edge.status ?? 0;
 			const b = statusBucket(st);
 			bucketMap.set(b, (bucketMap.get(b) ?? 0) + 1);
 		}
 		const barData = [...bucketMap.entries()].map(([name, count]) => ({ name, count }));
 
-		return { finished: finished.length, ok, bad, withErr, barData };
+		return {
+			finished: finished.length,
+			allowed,
+			unverified,
+			blocked,
+			withErr,
+			barData,
+		};
 	}, [rows]);
 
-	const pieData = useMemo(() => {
+	const verdictPieData = useMemo(() => {
 		if (!summary.finished) return [];
 		return [
-			{ name: 'HTTP response', value: summary.ok, fill: '#22c55e' },
-			{ name: 'No HTTP response', value: summary.bad, fill: '#ef4444' },
+			{ name: 'Allowed (automated)', value: summary.allowed, fill: PIE_ALLOWED },
+			{ name: 'Unverified', value: summary.unverified, fill: PIE_UNVERIFIED },
+			{ name: 'Blocked (automated)', value: summary.blocked, fill: PIE_BLOCKED },
 		].filter((d) => d.value > 0);
 	}, [summary]);
 
@@ -246,33 +308,73 @@ export default function UrlTester() {
 		};
 		const header = [
 			'url',
-			'accessible',
-			'best_status',
+			'filter_verdict',
+			'fetch_ok',
+			'fetch_ms',
+			'fetch_error',
+			'iframe_ok',
+			'iframe_ms',
+			'iframe_error',
+			'edge_http_response',
+			'edge_best_status',
 			'head_status',
 			'head_ok',
 			'get_status',
 			'get_ok',
-			'methods_detail',
-			'error',
+			'edge_methods_detail',
+			'api_error',
 			'checked_at',
 		];
 		const lines = [header.join(',')];
 		for (const r of rows) {
 			if (r.loading) continue;
+			if (r.error) {
+				lines.push(
+					[
+						cell(r.url),
+						'error',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						'',
+						cell(r.error),
+						cell(r.checkedAt ?? ''),
+					].join(','),
+				);
+				continue;
+			}
 			const res = r.result;
-			const headM = res?.methods.find((m) => m.method === 'HEAD');
-			const getM = res?.methods.find((m) => m.method === 'GET');
+			if (!res) continue;
+			const e = res.edge;
+			const headM = e.methods.find((m) => m.method === 'HEAD');
+			const getM = e.methods.find((m) => m.method === 'GET');
 			lines.push(
 				[
 					cell(r.url),
-					res?.accessible ? 'yes' : 'no',
-					res?.status ?? '',
+					res.verdict,
+					res.browserFetch.ok ? 'yes' : 'no',
+					String(res.browserFetch.durationMs),
+					cell(res.browserFetch.error ?? ''),
+					res.browserIframe.ok ? 'yes' : 'no',
+					String(res.browserIframe.durationMs),
+					cell(res.browserIframe.error ?? ''),
+					e.accessible ? 'yes' : 'no',
+					e.status ?? '',
 					headM?.status ?? '',
 					headM?.completed ? 'yes' : 'no',
 					getM?.status ?? '',
 					getM?.completed ? 'yes' : 'no',
-					cell(res ? formatMethods(res.methods) : ''),
-					cell(r.error ?? ''),
+					cell(formatEdgeMethods(e.methods)),
+					'',
 					cell(r.checkedAt ?? ''),
 				].join(','),
 			);
@@ -285,13 +387,30 @@ export default function UrlTester() {
 		URL.revokeObjectURL(a.href);
 	}, [rows]);
 
+	function renderBadge(r: ResultRow) {
+		if (r.loading) return <span className="badge pending">Checking</span>;
+		if (r.error) return <span className="badge error">Error</span>;
+		const v = r.result?.verdict;
+		if (v === 'allowed') return <span className="badge allowed">Allowed</span>;
+		if (v === 'unverified') return <span className="badge unverified">Unverified</span>;
+		if (v === 'blocked') return <span className="badge blocked">Blocked</span>;
+		return null;
+	}
+
 	return (
 		<div className="url-tester">
 			<h1>Test your URL list</h1>
 			<p className="lede">
-				Paste or upload a CSV of URLs. Each address is checked from the cloud using two independent HTTP probes
-				(HEAD and a partial GET). Green means the edge received an HTTP status (the host answered). Red means no
-				response was received. Open any link in a new tab to confirm behaviour on <em>your</em> network or filter.
+				Paste or upload a CSV of URLs. Each row runs <strong>three checks in parallel</strong>: in-browser{' '}
+				<code>fetch</code> (no-cors), a hidden <code>iframe</code> load, and edge HTTP probes (HEAD + partial GET)
+				from Cloudflare. <span className="lede-em">Red (Allowed)</span> means at least one scripted probe succeeded
+				— a likely filter flaw for blocklists. <span className="lede-em lede-green">Green (Blocked)</span> means
+				both scripted probes failed and the edge saw no HTTP response. <span className="lede-em lede-amber">
+					Amber (Unverified)
+				</span>{' '}
+				means scripted checks failed but the edge got HTTP — filters often block JavaScript while still allowing a
+				tab to open. <strong>Open the link in a new tab</strong> to confirm; if the page loads, treat it as allowed
+				(filter flaw).
 			</p>
 
 			<div className="panel">
@@ -342,33 +461,30 @@ export default function UrlTester() {
 						<table>
 							<thead>
 								<tr>
-									<th>Status</th>
-									<th>URL</th>
+									<th>Verdict</th>
+									<th>URL (open to verify)</th>
 									<th>Probes</th>
 								</tr>
 							</thead>
 							<tbody>
 								{rows.map((r) => (
 									<tr key={r.url}>
-										<td>
-											{r.loading && <span className="badge pending">Checking</span>}
-											{!r.loading && r.error && <span className="badge bad">No response</span>}
-											{!r.loading && r.result?.accessible && (
-												<span className="badge ok">HTTP {r.result.status || 'OK'}</span>
-											)}
-											{!r.loading && r.result && !r.result.accessible && !r.error && (
-												<span className="badge bad">No response</span>
-											)}
-										</td>
+										<td>{renderBadge(r)}</td>
 										<td className="link-cell">
-											<a href={r.url} target="_blank" rel="noopener noreferrer">
+											<a href={normalizeUrlInput(r.url)} target="_blank" rel="noopener noreferrer">
 												{r.url}
 											</a>
 										</td>
 										<td className="methods">
 											{r.loading && '—'}
 											{r.error && <span title={r.error}>{r.error}</span>}
-											{r.result && formatMethods(r.result.methods)}
+											{r.result && (
+												<>
+													<div>{formatProbeLine('Fetch', r.result.browserFetch)}</div>
+													<div>{formatProbeLine('Iframe', r.result.browserIframe)}</div>
+													<div>Edge: {formatEdgeMethods(r.result.edge.methods)}</div>
+												</>
+											)}
 										</td>
 									</tr>
 								))}
@@ -387,32 +503,40 @@ export default function UrlTester() {
 							<div className="lbl">Checked</div>
 						</div>
 						<div className="stat-card">
-							<div className="num" style={{ color: 'var(--tf-green)' }}>
-								{summary.ok}
-							</div>
-							<div className="lbl">Got HTTP status</div>
+							<div className="num stat-allowed">{summary.allowed}</div>
+							<div className="lbl">Allowed (red)</div>
 						</div>
 						<div className="stat-card">
-							<div className="num" style={{ color: 'var(--tf-red)' }}>
-								{summary.bad}
-							</div>
-							<div className="lbl">No HTTP response</div>
+							<div className="num stat-unverified">{summary.unverified}</div>
+							<div className="lbl">Unverified (amber)</div>
+						</div>
+						<div className="stat-card">
+							<div className="num stat-blocked">{summary.blocked}</div>
+							<div className="lbl">Blocked (green)</div>
 						</div>
 						{summary.withErr > 0 && (
 							<div className="stat-card">
-								<div className="num">{summary.withErr}</div>
+								<div className="num stat-error">{summary.withErr}</div>
 								<div className="lbl">API / validation errors</div>
 							</div>
 						)}
 					</div>
 					<div className="summary-grid">
 						<div className="chart-box">
-							<h3>Responses vs no response</h3>
-							{pieData.length > 0 ? (
+							<h3>Verdict mix</h3>
+							{verdictPieData.length > 0 ? (
 								<ResponsiveContainer width="100%" height={220}>
 									<PieChart>
-										<Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={78} label>
-											{pieData.map((entry) => (
+										<Pie
+											data={verdictPieData}
+											dataKey="value"
+											nameKey="name"
+											cx="50%"
+											cy="50%"
+											outerRadius={78}
+											label
+										>
+											{verdictPieData.map((entry) => (
 												<Cell key={entry.name} fill={entry.fill} />
 											))}
 										</Pie>
@@ -433,7 +557,7 @@ export default function UrlTester() {
 							)}
 						</div>
 						<div className="chart-box">
-							<h3>Status code groups</h3>
+							<h3>Edge HTTP status groups</h3>
 							{summary.barData.length > 0 ? (
 								<ResponsiveContainer width="100%" height={220}>
 									<BarChart data={summary.barData}>
@@ -452,15 +576,15 @@ export default function UrlTester() {
 								</ResponsiveContainer>
 							) : (
 								<p className="note" style={{ margin: 0 }}>
-									No status buckets yet.
+									No edge status buckets yet.
 								</p>
 							)}
 						</div>
 					</div>
 					<p className="note">
-						Checks run from Cloudflare’s network, not from your browser. A green result means the URL returned an
-						HTTP status to our probes; your local filter may still block the same URL when you browse. Use “open
-						in new tab” to verify from your side.
+						Automated probes cannot read cross-origin tab navigations. If a row is <strong>Unverified</strong> but
+						the site opens in a new tab, count that as <strong>Allowed</strong> for filter testing. Block pages
+						that return HTTP 200 may still register as Allowed to scripted checks.
 					</p>
 				</div>
 			)}

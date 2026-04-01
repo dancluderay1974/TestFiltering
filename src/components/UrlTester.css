@@ -30,6 +30,26 @@
 	font-size: 0.95rem;
 }
 
+.url-tester .lede code {
+	font-size: 0.88em;
+	background: var(--tf-bg);
+	padding: 0.1em 0.35em;
+	border-radius: 4px;
+}
+
+.url-tester .lede-em {
+	color: var(--tf-text);
+	font-weight: 600;
+}
+
+.url-tester .lede-em.lede-green {
+	color: var(--tf-green);
+}
+
+.url-tester .lede-em.lede-amber {
+	color: #f59e0b;
+}
+
 .url-tester .panel {
 	background: var(--tf-surface);
 	border: 1px solid var(--tf-border);
@@ -164,14 +184,25 @@
 	white-space: nowrap;
 }
 
-.url-tester .badge.ok {
-	background: rgba(34, 197, 94, 0.2);
+/* Filter testing semantics: allowed = red (flaw), blocked = green, unverified = amber */
+.url-tester .badge.allowed {
+	background: rgba(239, 68, 68, 0.22);
+	color: var(--tf-red);
+}
+
+.url-tester .badge.blocked {
+	background: rgba(34, 197, 94, 0.22);
 	color: var(--tf-green);
 }
 
-.url-tester .badge.bad {
-	background: rgba(239, 68, 68, 0.2);
-	color: var(--tf-red);
+.url-tester .badge.unverified {
+	background: rgba(245, 158, 11, 0.2);
+	color: #f59e0b;
+}
+
+.url-tester .badge.error {
+	background: rgba(148, 163, 184, 0.25);
+	color: var(--tf-muted);
 }
 
 .url-tester .badge.pending {
@@ -239,6 +270,22 @@
 	font-size: 0.75rem;
 	color: var(--tf-muted);
 	margin-top: 0.2rem;
+}
+
+.url-tester .stat-card .num.stat-allowed {
+	color: var(--tf-red);
+}
+
+.url-tester .stat-card .num.stat-unverified {
+	color: #f59e0b;
+}
+
+.url-tester .stat-card .num.stat-blocked {
+	color: var(--tf-green);
+}
+
+.url-tester .stat-card .num.stat-error {
+	color: var(--tf-muted);
 }
 
 .url-tester .note {
