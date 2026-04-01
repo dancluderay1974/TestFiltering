@@ -1,8 +1,11 @@
 /**
  * In-browser probes for URL reachability. These run in the user’s browser (subject to
- * CORS, mixed content, extensions, and filter rules). Scripted fetches and iframes can
- * fail even when top-level navigation to the same URL works — callers should treat
- * failures as inconclusive when corroborated by edge checks.
+ * CORS, mixed content, extensions, and filter rules).
+ *
+ * Important: iframe `load` fires for built-in browser error pages (e.g. connection
+ * failed / proxy block), so iframe must NOT be used as a success signal for “reachable”.
+ * Prefer fetch + image-based probes (favicon / apple-touch) which get real load/error
+ * semantics for subresources.
  */
 
 const BROWSER_TIMEOUT_MS = 14_000;
@@ -37,42 +40,46 @@ export async function probeFetchNoCors(url: string): Promise<BrowserProbeResult>
 }
 
 /**
- * Hidden iframe navigation. `load` fires when the navigation completes (including many
- * block / error pages). `X-Frame-Options` / CSP `frame-ancestors` can block embedding
- * even when a new tab would load the URL — prefer pairing with edge + manual open link.
- *
- * No `sandbox` attribute: a restrictive sandbox breaks many real sites; URLs are user-supplied
- * test targets only, and the iframe is removed immediately after the probe finishes.
+ * Load a URL as an image (decodes pixels). Fails on network error; works for favicon/apple-touch PNG.
  */
-export function probeIframeLoad(url: string): Promise<BrowserProbeResult> {
+export function probeImageLoad(imageUrl: string): Promise<BrowserProbeResult> {
 	return new Promise((resolve) => {
 		const start = Date.now();
-		let finished = false;
-
+		let done = false;
+		const img = new Image();
+		const timer = window.setTimeout(() => finish(false, 'timeout'), BROWSER_TIMEOUT_MS);
 		const finish = (ok: boolean, error: string | null) => {
-			if (finished) return;
-			finished = true;
+			if (done) return;
+			done = true;
 			window.clearTimeout(timer);
 			try {
-				iframe.remove();
+				img.remove();
 			} catch {
 				/* ignore */
 			}
 			resolve({ ok, durationMs: Date.now() - start, error });
 		};
-
-		const iframe = document.createElement('iframe');
-		iframe.setAttribute('aria-hidden', 'true');
-		iframe.setAttribute('referrerpolicy', 'no-referrer');
-		iframe.style.cssText =
-			'position:fixed;left:-9999px;top:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;visibility:hidden';
-
-		const timer = window.setTimeout(() => finish(false, 'timeout'), BROWSER_TIMEOUT_MS);
-
-		iframe.addEventListener('load', () => finish(true, null));
-		iframe.addEventListener('error', () => finish(false, 'iframe error'));
-
-		iframe.src = url;
-		document.body.appendChild(iframe);
+		img.onload = () => finish(true, null);
+		img.onerror = () => finish(false, 'image error');
+		img.referrerPolicy = 'no-referrer';
+		img.src = imageUrl;
 	});
+}
+
+/** Common favicon path for the page origin. */
+export function faviconProbeUrl(pageUrl: string): string {
+	const u = new URL(pageUrl);
+	u.pathname = '/favicon.ico';
+	u.search = '';
+	u.hash = '';
+	return u.href;
+}
+
+/** Secondary icon probe (many sites expose this as PNG). */
+export function appleTouchProbeUrl(pageUrl: string): string {
+	const u = new URL(pageUrl);
+	u.pathname = '/apple-touch-icon.png';
+	u.search = '';
+	u.hash = '';
+	return u.href;
 }

@@ -12,7 +12,13 @@ import {
 	XAxis,
 	YAxis,
 } from 'recharts';
-import { probeFetchNoCors, probeIframeLoad, type BrowserProbeResult } from '../lib/browserProbes';
+import {
+	appleTouchProbeUrl,
+	faviconProbeUrl,
+	probeFetchNoCors,
+	probeImageLoad,
+	type BrowserProbeResult,
+} from '../lib/browserProbes';
 import './UrlTester.css';
 
 type MethodProbe = {
@@ -35,8 +41,10 @@ export type FilterVerdict = 'allowed' | 'unverified' | 'blocked';
 export type MergedCheckResult = {
 	edge: CheckPayload;
 	verdict: FilterVerdict;
+	clientPassCount: number;
 	browserFetch: BrowserProbeResult;
-	browserIframe: BrowserProbeResult;
+	browserFavicon: BrowserProbeResult;
+	browserAppleTouch: BrowserProbeResult;
 };
 
 export type ResultRow = {
@@ -116,19 +124,18 @@ export function parseUrlsFromCsv(text: string): string[] {
 	return urls;
 }
 
-function computeVerdict(
-	clientOk: boolean,
-	edgeAllowed: boolean,
-): FilterVerdict {
-	if (clientOk) return 'allowed';
+function computeVerdict(clientPassCount: number, edgeAllowed: boolean): FilterVerdict {
+	if (clientPassCount >= 2) return 'allowed';
 	if (edgeAllowed) return 'unverified';
 	return 'blocked';
 }
 
 async function checkMerged(url: string): Promise<MergedCheckResult> {
 	const target = normalizeUrlInput(url);
+	const favUrl = faviconProbeUrl(target);
+	const appleUrl = appleTouchProbeUrl(target);
 
-	const [edgeRes, browserFetch, browserIframe] = await Promise.all([
+	const [edgeRes, browserFetch, browserFavicon, browserAppleTouch] = await Promise.all([
 		fetch('/api/check-url', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -145,18 +152,21 @@ async function checkMerged(url: string): Promise<MergedCheckResult> {
 			return (await res.json()) as CheckPayload;
 		}),
 		probeFetchNoCors(target),
-		probeIframeLoad(target),
+		probeImageLoad(favUrl),
+		probeImageLoad(appleUrl),
 	]);
 
-	const clientOk = browserFetch.ok || browserIframe.ok;
+	const clientPassCount = [browserFetch, browserFavicon, browserAppleTouch].filter((p) => p.ok).length;
 	const edgeAllowed = edgeRes.accessible;
-	const verdict = computeVerdict(clientOk, edgeAllowed);
+	const verdict = computeVerdict(clientPassCount, edgeAllowed);
 
 	return {
 		edge: edgeRes,
 		verdict,
+		clientPassCount,
 		browserFetch,
-		browserIframe,
+		browserFavicon,
+		browserAppleTouch,
 	};
 }
 
@@ -206,6 +216,16 @@ const PIE_ALLOWED = '#ef4444';
 const PIE_UNVERIFIED = '#f59e0b';
 const PIE_BLOCKED = '#22c55e';
 
+function rowClass(r: ResultRow): string {
+	if (r.loading) return 'row-loading';
+	if (r.error) return 'row-error';
+	const v = r.result?.verdict;
+	if (v === 'allowed') return 'row-allowed';
+	if (v === 'blocked') return 'row-blocked';
+	if (v === 'unverified') return 'row-unverified';
+	return '';
+}
+
 export default function UrlTester() {
 	const [rawInput, setRawInput] = useState('');
 	const [rows, setRows] = useState<ResultRow[]>([]);
@@ -229,7 +249,7 @@ export default function UrlTester() {
 		setProgress({ done: 0, total: urls.length });
 
 		let completed = 0;
-		await mapPool(urls, 4, async (url) => {
+		await mapPool(urls, 1, async (url) => {
 			try {
 				const result = await checkMerged(url);
 				const checkedAt = new Date().toISOString();
@@ -280,7 +300,13 @@ export default function UrlTester() {
 			const b = statusBucket(st);
 			bucketMap.set(b, (bucketMap.get(b) ?? 0) + 1);
 		}
-		const barData = [...bucketMap.entries()].map(([name, count]) => ({ name, count }));
+		const edgeBarData = [...bucketMap.entries()].map(([name, count]) => ({ name, count }));
+
+		const verdictBarData = [
+			{ name: 'Allowed', count: allowed, fill: PIE_ALLOWED },
+			{ name: 'Unverified', count: unverified, fill: PIE_UNVERIFIED },
+			{ name: 'Blocked', count: blocked, fill: PIE_BLOCKED },
+		].filter((d) => d.count > 0);
 
 		return {
 			finished: finished.length,
@@ -288,16 +314,17 @@ export default function UrlTester() {
 			unverified,
 			blocked,
 			withErr,
-			barData,
+			edgeBarData,
+			verdictBarData,
 		};
 	}, [rows]);
 
 	const verdictPieData = useMemo(() => {
 		if (!summary.finished) return [];
 		return [
-			{ name: 'Allowed (automated)', value: summary.allowed, fill: PIE_ALLOWED },
+			{ name: 'Allowed', value: summary.allowed, fill: PIE_ALLOWED },
 			{ name: 'Unverified', value: summary.unverified, fill: PIE_UNVERIFIED },
-			{ name: 'Blocked (automated)', value: summary.blocked, fill: PIE_BLOCKED },
+			{ name: 'Blocked', value: summary.blocked, fill: PIE_BLOCKED },
 		].filter((d) => d.value > 0);
 	}, [summary]);
 
@@ -309,12 +336,16 @@ export default function UrlTester() {
 		const header = [
 			'url',
 			'filter_verdict',
+			'client_pass_count',
 			'fetch_ok',
 			'fetch_ms',
 			'fetch_error',
-			'iframe_ok',
-			'iframe_ms',
-			'iframe_error',
+			'favicon_ok',
+			'favicon_ms',
+			'favicon_error',
+			'apple_touch_ok',
+			'apple_touch_ms',
+			'apple_touch_error',
 			'edge_http_response',
 			'edge_best_status',
 			'head_status',
@@ -346,6 +377,10 @@ export default function UrlTester() {
 						'',
 						'',
 						'',
+						'',
+						'',
+						'',
+						'',
 						cell(r.error),
 						cell(r.checkedAt ?? ''),
 					].join(','),
@@ -361,12 +396,16 @@ export default function UrlTester() {
 				[
 					cell(r.url),
 					res.verdict,
+					String(res.clientPassCount),
 					res.browserFetch.ok ? 'yes' : 'no',
 					String(res.browserFetch.durationMs),
 					cell(res.browserFetch.error ?? ''),
-					res.browserIframe.ok ? 'yes' : 'no',
-					String(res.browserIframe.durationMs),
-					cell(res.browserIframe.error ?? ''),
+					res.browserFavicon.ok ? 'yes' : 'no',
+					String(res.browserFavicon.durationMs),
+					cell(res.browserFavicon.error ?? ''),
+					res.browserAppleTouch.ok ? 'yes' : 'no',
+					String(res.browserAppleTouch.durationMs),
+					cell(res.browserAppleTouch.error ?? ''),
 					e.accessible ? 'yes' : 'no',
 					e.status ?? '',
 					headM?.status ?? '',
@@ -387,8 +426,15 @@ export default function UrlTester() {
 		URL.revokeObjectURL(a.href);
 	}, [rows]);
 
-	function renderBadge(r: ResultRow) {
-		if (r.loading) return <span className="badge pending">Checking</span>;
+	function renderVerdictCell(r: ResultRow) {
+		if (r.loading) {
+			return (
+				<span className="verdict-cell verdict-cell-loading">
+					<span className="spinner" aria-hidden />
+					<span className="sr-only">Testing</span>
+				</span>
+			);
+		}
 		if (r.error) return <span className="badge error">Error</span>;
 		const v = r.result?.verdict;
 		if (v === 'allowed') return <span className="badge allowed">Allowed</span>;
@@ -401,16 +447,16 @@ export default function UrlTester() {
 		<div className="url-tester">
 			<h1>Test your URL list</h1>
 			<p className="lede">
-				Paste or upload a CSV of URLs. Each row runs <strong>three checks in parallel</strong>: in-browser{' '}
-				<code>fetch</code> (no-cors), a hidden <code>iframe</code> load, and edge HTTP probes (HEAD + partial GET)
-				from Cloudflare. <span className="lede-em">Red (Allowed)</span> means at least one scripted probe succeeded
-				— a likely filter flaw for blocklists. <span className="lede-em lede-green">Green (Blocked)</span> means
-				both scripted probes failed and the edge saw no HTTP response. <span className="lede-em lede-amber">
-					Amber (Unverified)
+				Each URL is tested with <strong>several browser-side methods</strong> in parallel: <code>fetch</code> (no-cors), a{' '}
+				<strong>favicon</strong> image probe, an <strong>apple-touch-icon</strong> image probe, plus edge HTTP checks
+				(HEAD + partial GET). We <strong>do not</strong> use iframe load as a success signal — it can fire on browser
+				error pages when a filter blocks the tunnel. A row is <span className="lede-em">Allowed (red)</span> only if{' '}
+				<strong>at least two</strong> of the three client probes succeed. <span className="lede-em lede-green">
+					Blocked (green)
 				</span>{' '}
-				means scripted checks failed but the edge got HTTP — filters often block JavaScript while still allowing a
-				tab to open. <strong>Open the link in a new tab</strong> to confirm; if the page loads, treat it as allowed
-				(filter flaw).
+				means fewer than two client probes succeeded <em>and</em> the edge saw no HTTP response.{' '}
+				<span className="lede-em lede-amber">Unverified (amber)</span> means scripted checks did not reach two
+				successes but the origin responded from the edge — open the link in a new tab to confirm.
 			</p>
 
 			<div className="panel">
@@ -468,8 +514,8 @@ export default function UrlTester() {
 							</thead>
 							<tbody>
 								{rows.map((r) => (
-									<tr key={r.url}>
-										<td>{renderBadge(r)}</td>
+									<tr key={r.url} className={rowClass(r)}>
+										<td>{renderVerdictCell(r)}</td>
 										<td className="link-cell">
 											<a href={normalizeUrlInput(r.url)} target="_blank" rel="noopener noreferrer">
 												{r.url}
@@ -480,8 +526,12 @@ export default function UrlTester() {
 											{r.error && <span title={r.error}>{r.error}</span>}
 											{r.result && (
 												<>
+													<div>
+														Client passes: {r.result.clientPassCount}/3 (need 2 for Allowed)
+													</div>
 													<div>{formatProbeLine('Fetch', r.result.browserFetch)}</div>
-													<div>{formatProbeLine('Iframe', r.result.browserIframe)}</div>
+													<div>{formatProbeLine('Favicon', r.result.browserFavicon)}</div>
+													<div>{formatProbeLine('Apple touch', r.result.browserAppleTouch)}</div>
 													<div>Edge: {formatEdgeMethods(r.result.edge.methods)}</div>
 												</>
 											)}
@@ -557,10 +607,10 @@ export default function UrlTester() {
 							)}
 						</div>
 						<div className="chart-box">
-							<h3>Edge HTTP status groups</h3>
-							{summary.barData.length > 0 ? (
+							<h3>Verdict counts</h3>
+							{summary.verdictBarData.length > 0 ? (
 								<ResponsiveContainer width="100%" height={220}>
-									<BarChart data={summary.barData}>
+									<BarChart data={summary.verdictBarData}>
 										<CartesianGrid strokeDasharray="3 3" stroke="#334155" />
 										<XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
 										<YAxis allowDecimals={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
@@ -571,20 +621,51 @@ export default function UrlTester() {
 												borderRadius: 8,
 											}}
 										/>
-										<Bar dataKey="count" fill="#38bdf8" radius={[6, 6, 0, 0]} />
+										<Bar dataKey="count" radius={[6, 6, 0, 0]}>
+											{summary.verdictBarData.map((entry) => (
+												<Cell key={entry.name} fill={entry.fill} />
+											))}
+										</Bar>
 									</BarChart>
 								</ResponsiveContainer>
 							) : (
 								<p className="note" style={{ margin: 0 }}>
-									No edge status buckets yet.
+									No verdict bars yet.
 								</p>
 							)}
 						</div>
 					</div>
+					<div className="chart-box chart-box-wide">
+						<h3>Edge HTTP status groups</h3>
+						{summary.edgeBarData.length > 0 ? (
+							<ResponsiveContainer width="100%" height={220}>
+								<BarChart data={summary.edgeBarData}>
+									<CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+									<XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} />
+									<YAxis allowDecimals={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
+									<Tooltip
+										contentStyle={{
+											background: '#1e293b',
+											border: '1px solid #334155',
+											borderRadius: 8,
+										}}
+									/>
+									<Bar dataKey="count" fill="#38bdf8" radius={[6, 6, 0, 0]} />
+								</BarChart>
+							</ResponsiveContainer>
+						) : (
+							<p className="note" style={{ margin: 0 }}>
+								No edge status buckets yet.
+							</p>
+						)}
+					</div>
 					<p className="note">
-						Automated probes cannot read cross-origin tab navigations. If a row is <strong>Unverified</strong> but
-						the site opens in a new tab, count that as <strong>Allowed</strong> for filter testing. Block pages
-						that return HTTP 200 may still register as Allowed to scripted checks.
+						Branding inspired by the Diocese of Southwell &amp; Nottingham MAT (
+						<a href="https://www.snmat.org.uk/" target="_blank" rel="noopener noreferrer">
+							snmat.org.uk
+						</a>
+						). Automated probes cannot read cross-origin tab navigations — use <strong>Open link</strong> when
+						Unverified.
 					</p>
 				</div>
 			)}
